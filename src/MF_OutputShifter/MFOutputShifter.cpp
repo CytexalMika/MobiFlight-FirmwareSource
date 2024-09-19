@@ -7,6 +7,10 @@
 #include "MFOutputShifter.h"
 #include "allocateMem.h"
 
+#ifdef __AVR_ATmega2560__
+#include <SPI.h>
+#endif
+
 MFOutputShifter::MFOutputShifter()
 {
     _initialized = false;
@@ -52,6 +56,10 @@ bool MFOutputShifter::attach(uint8_t latchPin, uint8_t clockPin, uint8_t dataPin
     pinMode(_clockPin, OUTPUT);
     pinMode(_dataPin, OUTPUT);
 
+    #ifdef __AVR_ATmega2560__
+    _useSPI = clockPin == 52 && dataPin == 51; // Use SPI when dataPin is COPI and clock Pin is SCK
+    SPI.begin();
+    #endif
     if (!FitInMemory(sizeof(uint8_t) * _moduleCount))
         return false;
 
@@ -78,9 +86,19 @@ void MFOutputShifter::clear()
 void MFOutputShifter::update()
 {
     digitalWrite(_latchPin, LOW);
-    for (uint8_t i = _moduleCount; i > 0; i--) {
-        shiftOut(_dataPin, _clockPin, MSBFIRST, _lastState[i - 1]); // LSBFIRST, MSBFIRST,
+    if(_useSPI) {
+        static SPISettings settings = SPISettings();
+        SPI.beginTransaction(settings);
+        for (uint8_t i = _moduleCount; i > 0; i--) {
+            SPI.transfer(_lastState[i - 1]);
+        }
+        SPI.endTransaction();
+    } else {
+        for (uint8_t i = _moduleCount; i > 0; i--) {
+            shiftOut(_dataPin, _clockPin, MSBFIRST, _lastState[i - 1]); // LSBFIRST, MSBFIRST,
+        }
     }
+
     digitalWrite(_latchPin, HIGH);
 }
 
